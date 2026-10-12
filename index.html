@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050505">
+<title>Altitude & Descent</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: max(18px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+    background: #050505;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Arial, sans-serif;
+    min-height: 100vh;
+  }
+  .app { max-width: 600px; margin: 0 auto; }
+  h1 { text-align:center; font-size: 24px; margin: 6px 0 18px; }
+  .card {
+    background: #151515;
+    border: 1px solid #2b2b2b;
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .label {
+    color: #aaa;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 5px;
+  }
+  .value {
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(46px, 13vw, 72px);
+    line-height: 1;
+    font-weight: 600;
+    text-align: center;
+  }
+  .unit {
+    color:#aaa;
+    text-align:center;
+    font-size:18px;
+    margin-top:6px;
+  }
+  .row { display:flex; gap:12px; }
+  .field { flex:1; }
+  input {
+    width:100%;
+    font-size: 28px;
+    color:white;
+    background:#080808;
+    border:1px solid #444;
+    border-radius:12px;
+    padding:12px;
+    text-align:center;
+  }
+  button {
+    width:100%;
+    margin-top:12px;
+    padding:14px;
+    border:0;
+    border-radius:12px;
+    background:#1e88ff;
+    color:white;
+    font-size:18px;
+    font-weight:600;
+  }
+  button:active { opacity:.75; }
+  .result {
+    text-align:center;
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px solid #333;
+  }
+  .result .big { font-size:42px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .status { text-align:center; color:#aaa; font-size:13px; margin:8px 0; }
+  .warning {
+    background:#2b2100;
+    border:1px solid #705900;
+    color:#f5d76e;
+    border-radius:12px;
+    padding:12px;
+    font-size:13px;
+    line-height:1.4;
+  }
+  .small { color:#888; font-size:12px; line-height:1.4; margin-top:12px; }
+  .green { color:#54e38e; }
+  .red { color:#ff6969; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Altitude & Descent</h1>
+
+  <div class="card">
+    <div class="label">Current Altitude</div>
+    <div id="altitude" class="value">â€”</div>
+    <div class="unit">feet MSL</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Ground Speed</div>
+    <div id="speed" class="value">â€”</div>
+    <div class="unit">knots</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Current Vertical Speed</div>
+    <div id="vs" class="value">â€”</div>
+    <div class="unit">feet / minute</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Descent Calculator</div>
+
+    <div class="row">
+      <div class="field">
+        <div class="label">Target Altitude</div>
+        <input id="target" type="number" value="0" step="100" inputmode="numeric">
+      </div>
+      <div class="field">
+        <div class="label">Time</div>
+        <input id="minutes" type="number" value="10" min="0.1" step="0.5" inputmode="decimal">
+      </div>
+    </div>
+
+    <button id="calc">Calculate Required Descent</button>
+
+    <div class="result">
+      <div id="required" class="big">â€”</div>
+      <div class="unit">feet / minute descent</div>
+      <div id="eta" class="status"></div>
+    </div>
+  </div>
+
+  <div id="status" class="status">GPS not started</div>
+  <button id="start">Start GPS</button>
+
+  <div class="warning">
+    <strong>Important:</strong> iPhone browser GPS altitude can be substantially less accurate than an aviation GPS/barometric altimeter. Do not use this page as a primary flight instrument or for navigation.
+  </div>
+
+  <div class="small">
+    Ground speed and altitude are supplied by the iPhone's location services. Vertical speed is calculated from successive GPS altitude readings and is intentionally smoothed.
+  </div>
+</div>
+
+<script>
+(() => {
+  const altitudeEl = document.getElementById('altitude');
+  const speedEl = document.getElementById('speed');
+  const vsEl = document.getElementById('vs');
+  const statusEl = document.getElementById('status');
+  const targetEl = document.getElementById('target');
+  const minutesEl = document.getElementById('minutes');
+  const requiredEl = document.getElementById('required');
+  const etaEl = document.getElementById('eta');
+  const startBtn = document.getElementById('start');
+  const calcBtn = document.getElementById('calc');
+
+  let watchId = null;
+  let last = null;
+  let smoothedVs = null;
+
+  function fmt(n, decimals=0) {
+    return Number.isFinite(n) ? n.toLocaleString('en-US', {
+      maximumFractionDigits: decimals,
+      minimumFractionDigits: decimals
+    }) : 'â€”';
+  }
+
+  function calculate() {
+    const altitude = parseFloat(altitudeEl.dataset.value);
+    const target = parseFloat(targetEl.value);
+    const minutes = parseFloat(minutesEl.value);
+
+    if (!Number.isFinite(altitude) || !Number.isFinite(target) ||
+        !Number.isFinite(minutes) || minutes <= 0) {
+      requiredEl.textContent = 'â€”';
+      etaEl.textContent = 'Waiting for valid values';
+      return;
+    }
+
+    const difference = altitude - target;
+    const required = difference / minutes;
+
+    requiredEl.textContent = difference >= 0
+      ? fmt(Math.abs(required)) + ' â†“'
+      : fmt(Math.abs(required)) + ' â†‘';
+
+    etaEl.textContent = difference >= 0
+      ? `${fmt(difference)} ft to lose in ${fmt(minutes,1)} min`
+      : `${fmt(Math.abs(difference))} ft to climb in ${fmt(minutes,1)} min`;
+  }
+
+  function handlePosition(pos) {
+    const c = pos.coords;
+    const now = pos.timestamp || Date.now();
+
+    if (Number.isFinite(c.altitude)) {
+      altitudeEl.textContent = fmt(c.altitude);
+      altitudeEl.dataset.value = c.altitude;
+    }
+
+    if (Number.isFinite(c.speed)) {
+      speedEl.textContent = fmt(c.speed * 1.943844);
+    }
+
+    if (last && Number.isFinite(c.altitude) && Number.isFinite(last.altitude)) {
+      const dt = (now - last.time) / 1000;
+      if (dt > 0.5 && dt < 30) {
+        // Positive = climb, negative = descent.
+        const instantVs = ((c.altitude - last.altitude) / dt) * 60;
+        if (Math.abs(instantVs) < 6000) {
+          smoothedVs = smoothedVs == null
+            ? instantVs
+            : smoothedVs * 0.75 + instantVs * 0.25;
+          vsEl.textContent = (smoothedVs >= 0 ? '+' : '') + fmt(smoothedVs);
+          vsEl.className = 'value ' + (smoothedVs < -100 ? 'red' : smoothedVs > 100 ? 'green' : '');
+        }
+      }
+    }
+
+    if (Number.isFinite(c.altitude)) {
+      last = { altitude: c.altitude, time: now };
+    }
+
+    const accuracy = Number.isFinite(c.accuracy) ? Math.round(c.accuracy) : null;
+    statusEl.textContent = accuracy
+      ? `GPS active â€¢ horizontal accuracy Â±${accuracy} m`
+      : 'GPS active';
+
+    calculate();
+  }
+
+  function handleError(err) {
+    statusEl.textContent = `GPS error: ${err.message || 'Unable to get location'}`;
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      statusEl.textContent = 'Geolocation is not supported by this browser.';
+      return;
+    }
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      startBtn.textContent = 'Start GPS';
+      statusEl.textContent = 'GPS stopped';
+      return;
+    }
+
+    statusEl.textContent = 'Requesting GPS permissionâ€¦';
+
+    watchId = navigator.geolocation.watchPosition(
+      handlePosition,
+      handleError,
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000
+      }
+    );
+
+    startBtn.textContent = 'Stop GPS';
+  });
+
+  calcBtn.addEventListener('click', calculate);
+  targetEl.addEventListener('input', calculate);
+  minutesEl.addEventListener('input', calculate);
+})();
+</script>
+</body>
+</html>
