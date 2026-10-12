@@ -99,19 +99,19 @@
 
   <div class="card">
     <div class="label">Current Altitude</div>
-    <div id="altitude" class="value">â€”</div>
+    <div id="altitude" class="value">—</div>
     <div class="unit">feet MSL</div>
   </div>
 
   <div class="card">
     <div class="label">Ground Speed</div>
-    <div id="speed" class="value">â€”</div>
+    <div id="speed" class="value">—</div>
     <div class="unit">knots</div>
   </div>
 
   <div class="card">
     <div class="label">Current Vertical Speed</div>
-    <div id="vs" class="value">â€”</div>
+    <div id="vs" class="value">—</div>
     <div class="unit">feet / minute</div>
   </div>
 
@@ -132,7 +132,7 @@
     <button id="calc">Calculate Required Descent</button>
 
     <div class="result">
-      <div id="required" class="big">â€”</div>
+      <div id="required" class="big">—</div>
       <div class="unit">feet / minute descent</div>
       <div id="eta" class="status"></div>
     </div>
@@ -171,7 +171,7 @@
     return Number.isFinite(n) ? n.toLocaleString('en-US', {
       maximumFractionDigits: decimals,
       minimumFractionDigits: decimals
-    }) : 'â€”';
+    }) : '—';
   }
 
   function calculate() {
@@ -181,7 +181,7 @@
 
     if (!Number.isFinite(altitude) || !Number.isFinite(target) ||
         !Number.isFinite(minutes) || minutes <= 0) {
-      requiredEl.textContent = 'â€”';
+      requiredEl.textContent = '—';
       etaEl.textContent = 'Waiting for valid values';
       return;
     }
@@ -190,8 +190,8 @@
     const required = difference / minutes;
 
     requiredEl.textContent = difference >= 0
-      ? fmt(Math.abs(required)) + ' â†“'
-      : fmt(Math.abs(required)) + ' â†‘';
+      ? fmt(Math.abs(required)) + ' ↓'
+      : fmt(Math.abs(required)) + ' ↑';
 
     etaEl.textContent = difference >= 0
       ? `${fmt(difference)} ft to lose in ${fmt(minutes,1)} min`
@@ -232,7 +232,7 @@
 
     const accuracy = Number.isFinite(c.accuracy) ? Math.round(c.accuracy) : null;
     statusEl.textContent = accuracy
-      ? `GPS active â€¢ horizontal accuracy Â±${accuracy} m`
+      ? `GPS active • horizontal accuracy ±${accuracy} m`
       : 'GPS active';
 
     calculate();
@@ -256,7 +256,7 @@
       return;
     }
 
-    statusEl.textContent = 'Requesting GPS permissionâ€¦';
+    statusEl.textContent = 'Requesting GPS permission…';
 
     watchId = navigator.geolocation.watchPosition(
       handlePosition,
